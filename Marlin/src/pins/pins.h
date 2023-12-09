@@ -894,6 +894,8 @@
 //
 #elif MB(AQUILA_V101)
   #include "hc32f4/pins_AQUILA_101.h"               // HC32F460                             env:HC32F460C_aquila_101
+#elif MB(TRIGORILLA_PRO_A_V104)
+  #include "hc32f4/pins_TRIGORILLA_PRO_A_V104.h"    // HC32F460                             env:HC32F460C_trigorilla_pro_a_v104
 
 //
 // Custom board (with custom PIO env)

@@ -68,7 +68,7 @@
 
 // Choose the name from boards.h that matches your setup
 #ifndef MOTHERBOARD
-  #define MOTHERBOARD BOARD_RAMPS_14_EFB
+  #define MOTHERBOARD BOARD_TRIGORILLA_PRO_A_V104
 #endif
 
 /**
@@ -79,7 +79,7 @@
  *
  * :[-1, 0, 1, 2, 3, 4, 5, 6, 7]
  */
-#define SERIAL_PORT 0
+#define SERIAL_PORT 2
 
 /**
  * Serial Port Baud Rate
