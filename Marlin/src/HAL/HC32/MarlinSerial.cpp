@@ -54,6 +54,7 @@ constexpr bool serial_handles_emergency(int port) {
 
 DEFINE_HWSERIAL_MARLIN(MSerial1, 1);
 DEFINE_HWSERIAL_MARLIN(MSerial2, 2);
+DEFINE_HWSERIAL_MARLIN(MSerial3, 3);
 
 //
 // Serial port assertions

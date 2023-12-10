@@ -117,13 +117,9 @@
 #define analogInputToDigitalPin(p) (p)
 #endif
 
-#define CRITICAL_SECTION_START        \
-  uint32_t primask = __get_PRIMASK(); \
-  (void)__iCliRetVal()
+#define CRITICAL_SECTION_START() NOOP
 
-#define CRITICAL_SECTION_END \
-  if (!primask)              \
-  (void)__iSeiRetVal()
+#define CRITICAL_SECTION_END() NOOP
 
 // Disable interrupts
 #define cli() noInterrupts()

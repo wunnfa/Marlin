@@ -95,7 +95,7 @@ namespace ExtUI {
   void onPostprocessSettings() {
     // Called after loading or resetting stored settings
     dgus.paramInit();
-    dgus.powerLoss();
+    //dgus.powerLoss();
   }
 
   void onSettingsStored(const bool success) {

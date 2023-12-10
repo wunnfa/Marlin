@@ -3189,7 +3189,7 @@
 //
 // Touch-screen LCD for Anycubic Vyper
 //
-//#define ANYCUBIC_LCD_VYPER
+#define ANYCUBIC_LCD_VYPER
 
 //
 // Touch-screen LCD for Anycubic Kobra
@@ -3197,7 +3197,7 @@
 //#define ANYCUBIC_LCD_DGUS
 
 #if ANY(ANYCUBIC_LCD_DGUS, ANYCUBIC_LCD_VYPER)
-  #define LCD_SERIAL_PORT 4
+  #define LCD_SERIAL_PORT 3
 #endif
 
 //

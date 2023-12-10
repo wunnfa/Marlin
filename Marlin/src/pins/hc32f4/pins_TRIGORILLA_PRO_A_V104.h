@@ -113,8 +113,6 @@
 //
 // Misc
 //
-#undef LCD_SERIAL_PORT
-#define LCD_SERIAL_PORT                     4
 #define BEEPER_PIN                          PB5
 #define FIL_RUNOUT_PIN                      PC13
 
@@ -171,11 +169,11 @@
 #define BOARD_USART2_TX_PIN     PA2     // DEBUG
 #define BOARD_USART2_RX_PIN     PA3
 
-#define BOARD_USART3_TX_PIN     PB4     // MOTO
-#define BOARD_USART3_RX_PIN     PB3
+#define BOARD_USART4_TX_PIN     PB4     // MOTO SWAPPED WITH USART 3
+#define BOARD_USART4_RX_PIN     PB3
 
-#define BOARD_USART4_TX_PIN     PB10    // LCD
-#define BOARD_USART4_RX_PIN     PH2
+#define BOARD_USART3_TX_PIN     PB10    // LCD SWAPPED WITH USART 4
+#define BOARD_USART3_RX_PIN     PH2
 
 /**
  * TMC2208/TMC2209 stepper drivers
