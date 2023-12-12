@@ -39,7 +39,8 @@
 //
 // EEPROM
 //
-#define FLASH_EEPROM_EMULATION
+//#define FLASH_EEPROM_EMULATION
+#define SDCARD_EEPROM_EMULATION
 #define MARLIN_EEPROM_SIZE              0x2000  // 4KB
 
 //
