@@ -748,6 +748,15 @@ bool Probe::probe_down_to_z(const_float_t z, const_feedRate_t fr_mm_s) {
 float Probe::run_z_probe(const bool sanity_check/*=true*/, const_float_t z_min_point/*=Z_PROBE_LOW_POINT*/, const_float_t z_clearance/*=Z_TWEEN_SAFE_CLEARANCE*/) {
   DEBUG_SECTION(log_probe, "Probe::run_z_probe", DEBUGGING(LEVELING));
 
+  #ifdef NOZZLE_AS_PROBE
+    #if PIN_EXISTS(AUTO_LEVEL_TX)
+	    OUT_WRITE(AUTO_LEVEL_TX_PIN, LOW);
+	    delay(300);
+	    OUT_WRITE(AUTO_LEVEL_TX_PIN, HIGH);
+	    delay(100);
+    #endif
+  #endif
+
   const float zoffs = SUM_TERN(HAS_HOTEND_OFFSET, -offset.z, hotend_offset[active_extruder].z);
 
   auto try_to_probe = [&](PGM_P const plbl, const_float_t z_probe_low_point, const feedRate_t fr_mm_s, const bool scheck) -> bool {
