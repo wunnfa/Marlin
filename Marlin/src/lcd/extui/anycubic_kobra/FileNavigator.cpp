@@ -37,7 +37,7 @@
 
 #if ENABLED(ANYCUBIC_LCD_KOBRA)
 
-#include "dgus_FileNavigator.h"
+#include "FileNavigator.h"
 #include "dgus_tft.h"
 
 using namespace ExtUI;

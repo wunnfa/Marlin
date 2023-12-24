@@ -33,15 +33,17 @@
 #if ENABLED(ANYCUBIC_LCD_KOBRA)
 
 #include "dgus_tft.h"
-#include "dgus_Tunes.h"
-#include "dgus_FileNavigator.h"
+#include "../anycubic/Tunes.h"
+#include "FileNavigator.h"
 
 #include "../../../gcode/queue.h"
 #include "../../../sd/cardreader.h"
 #include "../../../libs/numtostr.h"
 //#include "../../../../libs/build_date.h"
 #include "../../../MarlinCore.h"
+#include "../../../module/stepper.h"
 #include "../../../feature/powerloss.h"
+#include "../../../module/probe.h"
 
 namespace Anycubic {
 
@@ -181,34 +183,34 @@ namespace Anycubic {
     injectCommands_P(AC_cmnd_enable_levelling);
 
     // Startup tunes are defined in Tunes.h
-    // PlayTune(BEEPER_PIN, Anycubic_PowerOn, 1);
-    // PlayTune(BEEPER_PIN, GB_PowerOn, 1);
+    // playTune(BEEPER_PIN, Anycubic_PowerOn, 1);
+    // playTune(BEEPER_PIN, GB_PowerOn, 1);
     #if ACDEBUGLEVEL
-      SERIAL_ECHOLNPAIR("AC Debug Level ", ACDEBUGLEVEL);
+      SERIAL_ECHOLNPGM("AC Debug Level ", ACDEBUGLEVEL);
     #endif
 //    SendtoTFTLN(AC_msg_ready);
   }
 
   void DgusTFT::ParamInit() {
 
-    if(lcd_info.language == ExtUI::CHS) {
+    if(lcd_info.language == CHS) {
       page_index_now = 1;
-    } else if(lcd_info.language == ExtUI::ENG) {
+    } else if(lcd_info.language == ENG) {
       page_index_now = 121;
     }
 
-    LcdAudioSet(lcd_info.audio);
+    LcdAudioSet(lcd_info.audio_on);
 
 #if ACDEBUG(AC_MARLIN)
-    if(lcd_info.language == ExtUI::CHS) {
+    if(lcd_info.language == CHS) {
       SERIAL_ECHOLN("lcd language: CHS");
-    } else if(lcd_info.language == ExtUI::ENG) {
+    } else if(lcd_info.language == ENG) {
       SERIAL_ECHOLN("lcd language: ENG");
     }
 
-    if(lcd_info.audio == ExtUI::ON) {
+    if(lcd_info.audio_on) {
       SERIAL_ECHOLN("lcd audio: ON");
-    } else if(lcd_info.audio == ExtUI::OFF) {
+    } else if(!lcd_info.audio_on) {
       SERIAL_ECHOLN("lcd audio: OFF");
     }
 #endif
@@ -224,8 +226,8 @@ namespace Anycubic {
 
 #if ACDEBUG(AC_MARLIN)
     if(key_value) {
-      SERIAL_ECHOLNPAIR("page: ", page_index_now);
-      SERIAL_ECHOLNPAIR("key: ", key_value);
+      SERIAL_ECHOLNPGM("page: ", page_index_now);
+      SERIAL_ECHOLNPGM("key: ", key_value);
     }
 #endif
 
@@ -257,14 +259,14 @@ namespace Anycubic {
       page176_handle();
     } else if(177 <= page_index_now && page_index_now <= 198) {
 #if 0 // ACDEBUG(AC_MARLIN)
-        SERIAL_ECHOLNPAIR("line: ", __LINE__);
-        SERIAL_ECHOLNPAIR("func: ", page_index_now);
+        SERIAL_ECHOLNPGM("line: ", __LINE__);
+        SERIAL_ECHOLNPGM("func: ", page_index_now);
 #endif
 //      page177_to_198_handle();
     } else if(199 == page_index_now || page_index_now == 200) {
 #if 0 // ACDEBUG(AC_MARLIN)
-        SERIAL_ECHOLNPAIR("line: ", __LINE__);
-        SERIAL_ECHOLNPAIR("func: ", page_index_now);
+        SERIAL_ECHOLNPGM("line: ", __LINE__);
+        SERIAL_ECHOLNPGM("func: ", page_index_now);
 #endif
       page199_to_200_handle();
     } else if(page_index_now == 201 || page_index_now == 204) {
@@ -289,23 +291,23 @@ namespace Anycubic {
 
     } else {
 
-      if(lcd_info.language == ExtUI::CHS) {
+      if(lcd_info.language == CHS) {
         if(0 < page_index_now && page_index_now < 36) {
           fun_array[page_index_now-1]();
         } else {
 #if ACDEBUG(AC_MARLIN)
-          SERIAL_ECHOLNPAIR("line: ", __LINE__);
-          SERIAL_ECHOLNPAIR("fun not exists: ", page_index_now);
+          SERIAL_ECHOLNPGM("line: ", __LINE__);
+          SERIAL_ECHOLNPGM("fun not exists: ", page_index_now);
 #endif
         }
-      } else if(lcd_info.language == ExtUI::ENG) {
+      } else if(lcd_info.language == ENG) {
         if(120 < page_index_now && page_index_now < 156) {
           fun_array[page_index_now-1-120]();  // ENG page_index is 120 more than CHS
         } else {
 #if ACDEBUG(AC_MARLIN)
           SERIAL_ECHOLN("lcd function not exists");
-          SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
-          SERIAL_ECHOLNPAIR("page_index_last_2: ", page_index_last_2);
+          SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
+          SERIAL_ECHOLNPGM("page_index_last_2: ", page_index_last_2);
 #endif
         }
       }
@@ -318,61 +320,79 @@ namespace Anycubic {
     CheckHeaters();
   }
 
-  void DgusTFT::PrinterKilled(PGM_P error,PGM_P component)  {
-//    SendtoTFTLN(AC_msg_kill_lcd);
+  uint8_t FSHlength(FSTR_P FSHinput) {
+    PGM_P FSHinputPointer = reinterpret_cast<PGM_P>(FSHinput);
+    uint8_t stringLength  = 0;
+    while (pgm_read_byte(FSHinputPointer++)) stringLength++;
+    return stringLength;
+  }
+
+  void DgusTFT::PrinterKilled(FSTR_P error_p,FSTR_P component_p)  {
+    //    SendtoTFTLN(AC_msg_kill_lcd);
+    
+    // copy string in FLASH to RAM for strcmp_P
+
+    uint8_t textLength = FSHlength(error_p);
+    char error[FSHlength(error_p) + 1];
+    memcpy_P(error, error_p, textLength + 1);  // +1 for the null terminator
+
+    textLength = FSHlength(component_p);
+    char component[FSHlength(component_p) + 1];
+    memcpy_P(component, component_p, textLength + 1);  // +1 for the null terminator
+
     #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("PrinterKilled()\nerror: ", error , "\ncomponent: ", component);
+      SERIAL_ECHOLNPGM("PrinterKilled()\nerror: ", error , "\ncomponent: ", component);
     #endif
     
     if(strncmp(error, "Heating Failed", strlen("Heating Failed")) == 0) {
 
         if(strncmp(component, "Bed", strlen("Bed")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_BED_HEATER);
-            SERIAL_ECHOLNPAIR("Check Bed heater");
+            SERIAL_ECHOLNPGM("Check Bed heater");
         } else if(strncmp(component, "E1", strlen("E1")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_HOTEND_HEATER);
-            SERIAL_ECHOLNPAIR("Check E1 heater");
+            SERIAL_ECHOLNPGM("Check E1 heater");
         }
 
     } else if(strncmp(error, "Err: MINTEMP", strlen("Err: MINTEMP")) == 0) {
 
         if(strncmp(component, "Bed", strlen("Bed")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_BED_NTC);
-            SERIAL_ECHOLNPAIR("Check Bed thermistor");
+            SERIAL_ECHOLNPGM("Check Bed thermistor");
         } else if(strncmp(component, "E1", strlen("E1")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_HOTEND_NTC);
-            SERIAL_ECHOLNPAIR("Check E1 thermistor");
+            SERIAL_ECHOLNPGM("Check E1 thermistor");
         }
     } else if(strncmp(error, "Err: MAXTEMP", strlen("Err: MAXTEMP")) == 0) {
 
         if(strncmp(component, "Bed", strlen("Bed")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_BED_NTC);
-            SERIAL_ECHOLNPAIR("Check Bed thermistor");
+            SERIAL_ECHOLNPGM("Check Bed thermistor");
         } else if(strncmp(component, "E1", strlen("E1")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_HOTEND_NTC);
-            SERIAL_ECHOLNPAIR("Check E1 thermistor");
+            SERIAL_ECHOLNPGM("Check E1 thermistor");
         }
     } else if(strncmp(error, "THERMAL RUNAWAY", strlen("THERMAL RUNAWAY")) == 0) {
 
         if(strncmp(component, "Bed", strlen("Bed")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_BED_HEATER);
-            SERIAL_ECHOLNPAIR("Check Bed thermal runaway");
+            SERIAL_ECHOLNPGM("Check Bed thermal runaway");
         } else if(strncmp(component, "E1", strlen("E1")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_HOTEND_HEATER);
-            SERIAL_ECHOLNPAIR("Check E1 thermal runaway");
+            SERIAL_ECHOLNPGM("Check E1 thermal runaway");
         }
 
     } else if(strncmp(error, "Homing Failed", strlen("Homing Failed")) == 0) {
 
         if(strncmp(component, "X", strlen("X")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_X_ENDSTOP);
-            SERIAL_ECHOLNPAIR("Check X endstop");
+            SERIAL_ECHOLNPGM("Check X endstop");
         } else if(strncmp(component, "Y", strlen("Y")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_Y_ENDSTOP);
-            SERIAL_ECHOLNPAIR("Check Y endstop");
+            SERIAL_ECHOLNPGM("Check Y endstop");
         } else if(strncmp(component, "Z", strlen("Z")) == 0) {
             ChangePageOfTFT(PAGE_CHS_ABNORMAL_Z_ENDSTOP);
-            SERIAL_ECHOLNPAIR("Check Z endstop");
+            SERIAL_ECHOLNPGM("Check Z endstop");
         }
     }
 
@@ -380,7 +400,7 @@ namespace Anycubic {
 
   void DgusTFT::MediaEvent(media_event_t event)  {
     #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("ProcessMediaStatus() ", event);
+      SERIAL_ECHOLNPGM("ProcessMediaStatus() ", event);
     #endif
     switch(event) {
       case AC_media_inserted:
@@ -424,8 +444,8 @@ namespace Anycubic {
     char str_buf[20];
 
     #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("TimerEvent() ", event);
-      SERIAL_ECHOLNPAIR("Printer State: ", printer_state);
+      SERIAL_ECHOLNPGM("TimerEvent() ", event);
+      SERIAL_ECHOLNPGM("Printer State: ", printer_state);
     #endif
 
     switch (event) {
@@ -470,19 +490,18 @@ namespace Anycubic {
 
   void DgusTFT::FilamentRunout()  {
     #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("FilamentRunout() printer_state ", printer_state);
+      SERIAL_ECHOLNPGM("FilamentRunout() printer_state ", printer_state);
     
     // 1 Signal filament out
 //    SendtoTFTLN(isPrintingFromMedia() ? AC_msg_filament_out_alert : AC_msg_filament_out_block);
 //    printer_state = AC_printer_filament_out;
 
-      SERIAL_ECHOLNPAIR("getFilamentRunoutState: ", getFilamentRunoutState());
+      SERIAL_ECHOLNPGM("getFilamentRunoutState: ", getFilamentRunoutState());
     #endif
 
     pop_up_index = 15;  // show filament lack.
     
-    if(READ(FIL_RUNOUT_PIN) != getFilamentRunoutOriginState()) {
-      PlayTune(BEEPER_PIN, FilamentOut, 1);
+    if (READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_STATE) {
 
       if(isPrintingFromMedia()) {
         pausePrint();
@@ -495,9 +514,9 @@ namespace Anycubic {
   void DgusTFT::ConfirmationRequest(const char * const msg)  {
     // M108 continue
     #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("ConfirmationRequest() ", msg);
-      SERIAL_ECHOLNPAIR("printer_state:", printer_state);
-      SERIAL_ECHOLNPAIR("pause_state:", pause_state);
+      SERIAL_ECHOLNPGM("ConfirmationRequest() ", msg);
+      SERIAL_ECHOLNPGM("printer_state:", printer_state);
+      SERIAL_ECHOLNPGM("pause_state:", pause_state);
     #endif
 
     switch (printer_state) {
@@ -517,13 +536,13 @@ namespace Anycubic {
         if (strcmp_P(msg, MARLIN_msg_heater_timeout) == 0) {
           pause_state = AC_paused_heater_timed_out;
 //          SendtoTFTLN(AC_msg_paused); // enable continue button
-          PlayTune(BEEPER_PIN,Heater_Timedout,1);
+          playTune(HeaterTimeout, 1);
         }
         // Reheat finished, send acknowledgement
         else if (strcmp_P(msg, MARLIN_msg_reheat_done) == 0) {
 
 #if ACDEBUG(AC_MARLIN)
-          SERIAL_ECHOLNPAIR("send M108 ", __LINE__);
+          SERIAL_ECHOLNPGM("send M108 ", __LINE__);
 #endif
           injectCommands_P(PSTR("M108"));
 
@@ -539,7 +558,7 @@ namespace Anycubic {
 //          SendtoTFTLN(AC_msg_paused); // enable continue button
         } else if(strcmp_P(msg, MARLIN_msg_nozzle_parked) == 0) {
 #if ACDEBUG(AC_MARLIN)
-            SERIAL_ECHOLNPAIR("send M108 ", __LINE__);
+            SERIAL_ECHOLNPGM("send M108 ", __LINE__);
 #endif
             injectCommands_P(PSTR("M108"));
 
@@ -556,9 +575,9 @@ namespace Anycubic {
 
   void DgusTFT::StatusChange(const char * const msg)  {
     #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("StatusChange() ", msg);
-      SERIAL_ECHOLNPAIR("printer_state:", printer_state);
-      SERIAL_ECHOLNPAIR("pause_state:", pause_state);
+      SERIAL_ECHOLNPGM("StatusChange() ", msg);
+      SERIAL_ECHOLNPGM("printer_state:", printer_state);
+      SERIAL_ECHOLNPGM("pause_state:", pause_state);
     #endif
     bool msg_matched = false;
     static uint8_t probe_cnt = 0;
@@ -585,7 +604,7 @@ namespace Anycubic {
 
         // If probing fails dont save the mesh raise the probe above the bad point
         if (strcmp_P(msg, MARLIN_msg_probing_failed) == 0) {
-          PlayTune(BEEPER_PIN, BeepBeepBeeep, 1);
+          playTune(BeepBeepBeeep, 1);
           injectCommands_P(PSTR("G1 Z50 F500"));
           ChangePageOfTFT(PAGE_CHS_ABNORMAL_LEVELING_SENSOR);
 //          SendtoTFTLN(AC_msg_probing_complete);
@@ -614,7 +633,7 @@ namespace Anycubic {
         } else {
 
         #if ACDEBUG(AC_MARLIN)
-          SERIAL_ECHOLNPAIR("setFilamentRunoutState: ", __LINE__);
+          SERIAL_ECHOLNPGM("setFilamentRunoutState: ", __LINE__);
         #endif
 
           setFilamentRunoutState(false);
@@ -695,15 +714,15 @@ namespace Anycubic {
   }
 
   void DgusTFT::HomingComplete() {
-    if(lcd_info.language == ExtUI::ENG) {
+    if(lcd_info.language == ENG) {
         if(page_index_last > 120) {
             page_index_last -= 120;
         }
     }
 
 #if ACDEBUG(AC_MARLIN)
-      SERIAL_ECHOLNPAIR("HomingComplete, line: ", __LINE__);
-      SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
+      SERIAL_ECHOLNPGM("HomingComplete, line: ", __LINE__);
+      SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
 #endif
 
     if(!isPrintingFromMedia()) {
@@ -840,17 +859,17 @@ namespace Anycubic {
   void DgusTFT::ChangePageOfTFT(uint32_t page_index) {
 
 #if ACDEBUG(AC_MARLIN)
-    SERIAL_ECHOLNPAIR("ChangePageOfTFT: ", page_index);
+    SERIAL_ECHOLNPGM("ChangePageOfTFT: ", page_index);
 #endif
 
     uint8_t data_buf[20] = {0};
     uint8_t data_index = 0;
     uint32_t data_temp = 0;
 
-    if(lcd_info.language == ExtUI::CHS) {
+    if(lcd_info.language == CHS) {
         data_temp = page_index;
 
-    } else if(lcd_info.language == ExtUI::ENG) {
+    } else if(lcd_info.language == ENG) {
         if(PAGE_OUTAGE_RECOVERY == page_index) {
             data_temp = PAGE_ENG_OUTAGE_RECOVERY;
         } else if(PAGE_CHS_PROBE_PREHEATING == page_index) {
@@ -891,25 +910,25 @@ namespace Anycubic {
 	  page_index_now = data_temp;
 
 #if ACDEBUG(AC_MARLIN)
-    SERIAL_ECHOLNPAIR("page_index_last_2: ", page_index_last_2);
-    SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
-    SERIAL_ECHOLNPAIR("page_index_now: ", page_index_now);
+    SERIAL_ECHOLNPGM("page_index_last_2: ", page_index_last_2);
+    SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
+    SERIAL_ECHOLNPGM("page_index_now: ", page_index_now);
 #endif
   }
 
   void DgusTFT::FakeChangePageOfTFT(uint32_t page_index) {
 
 #if ACDEBUG(AC_MARLIN)
-    SERIAL_ECHOLNPAIR("ChangePageOfTFT: ", page_index);
+    SERIAL_ECHOLNPGM("ChangePageOfTFT: ", page_index);
 #endif
 
     uint8_t data_buf[20] = {0};
     uint8_t data_index = 0;
     uint32_t data_temp = 0;
 
-    if(lcd_info.language == ExtUI::CHS) {
+    if(lcd_info.language == CHS) {
         data_temp = page_index;
-    } else if(lcd_info.language == ExtUI::ENG) {
+    } else if(lcd_info.language == ENG) {
         if(PAGE_OUTAGE_RECOVERY == page_index) {
             data_temp = PAGE_ENG_OUTAGE_RECOVERY;
         } else if(PAGE_CHS_PROBE_PREHEATING == page_index) {
@@ -928,21 +947,21 @@ namespace Anycubic {
     page_index_now = data_temp;
 
 #if ACDEBUG(AC_MARLIN)
-    SERIAL_ECHOLNPAIR("page_index_last_2: ", page_index_last_2);
-    SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
-    SERIAL_ECHOLNPAIR("page_index_now: ", page_index_now);
+    SERIAL_ECHOLNPGM("page_index_last_2: ", page_index_last_2);
+    SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
+    SERIAL_ECHOLNPGM("page_index_now: ", page_index_now);
 #endif
 
   }
 
-  void DgusTFT::LcdAudioSet(ExtUI::audio_t audio) {
+  void DgusTFT::LcdAudioSet(const bool audio_on) {
   // On:  5A A5 07 82 00 80 5A 00 00 1A
   // Off: 5A A5 07 82 00 80 5A 00 00 12
     uint8_t data_buf[20] = { 0x5A, 0xA5, 0x07, 0x82, 0x00, 0x80, 0x5A, 0x00, 0x00 };
 
-    if(audio == ExtUI::ON) {
+    if(audio_on) {
         data_buf[9] = 0x1A;
-    } else if(audio == ExtUI::OFF) {
+    } else if(!audio_on) {
         data_buf[9] = 0x12;
     }
 
@@ -975,7 +994,7 @@ namespace Anycubic {
 
       tft_last_check = millis();
       while(!TFTSer.available()) {
-        TERN_(USE_WATCHDOG, HAL_watchdog_refresh());
+        TERN_(USE_WATCHDOG, hal.watchdog_refresh());
         if(millis() - tft_last_check > 500) {
           data_index = 0;
           data_received = 0;
@@ -997,7 +1016,7 @@ namespace Anycubic {
     } else if(tft_receive_steps==3) {
       if(data_index >= 63) {
 #if ACDEBUG(AC_MARLIN)
-        SERIAL_ECHOLNPAIR("lcd uart buff overflow: ", data_index);
+        SERIAL_ECHOLNPGM("lcd uart buff overflow: ", data_index);
 #endif
         data_index = 0;
         data_received = 0;
@@ -1020,7 +1039,7 @@ namespace Anycubic {
 #if 0
   {
 
-//    SERIAL_ECHOLNPAIR("ReadTFTCommand: ", millis());
+//    SERIAL_ECHOLNPGM("ReadTFTCommand: ", millis());
 //    return -1;
 
     bool command_ready = false;
@@ -1043,14 +1062,14 @@ namespace Anycubic {
     if (command_ready) {
       panel_command[command_len] = 0x00;
 //      #if ACDEBUG(AC_ALL)
-        SERIAL_ECHOLNPAIR("< ", panel_command);
+        SERIAL_ECHOLNPGM("< ", panel_command);
 //      #endif
       #if ACDEBUG(AC_SOME)
         // Ignore status request commands
         uint8_t req = atoi(&panel_command[1]);
         if (req > 7 && req != 20) {
-          SERIAL_ECHOLNPAIR("> ", panel_command);
-          SERIAL_ECHOLNPAIR("printer_state:", printer_state);
+          SERIAL_ECHOLNPGM("> ", panel_command);
+          SERIAL_ECHOLNPGM("printer_state:", printer_state);
         }
       #endif
     }
@@ -1082,7 +1101,7 @@ namespace Anycubic {
         if (faultE0Duration >= AC_HEATER_FAULT_VALIDATION_TIME) {
 //          SendtoTFTLN(AC_msg_nozzle_temp_abnormal);
 #if ACDEBUG(AC_MARLIN)
-          SERIAL_ECHOLNPAIR("Extruder temp abnormal! : ", temp);
+          SERIAL_ECHOLNPGM("Extruder temp abnormal! : ", temp);
 #endif
           faultE0Duration = 0;
         }
@@ -1094,7 +1113,7 @@ namespace Anycubic {
         if (faultBedDuration >= AC_HEATER_FAULT_VALIDATION_TIME) {
 //            SendtoTFTLN(AC_msg_bed_temp_abnormal);
 #if ACDEBUG(AC_MARLIN)
-            SERIAL_ECHOLNPAIR("Bed temp abnormal! : ", temp);
+            SERIAL_ECHOLNPGM("Bed temp abnormal! : ", temp);
 #endif
             faultBedDuration = 0;
         }
@@ -1122,7 +1141,7 @@ namespace Anycubic {
   void DgusTFT::SendFileList(int8_t startindex) {
     // Respond to panel request for 4 files starting at index
     #if ACDEBUG(AC_INFO)
-      SERIAL_ECHOLNPAIR("## SendFileList ## ", startindex);
+      SERIAL_ECHOLNPGM("## SendFileList ## ", startindex);
     #endif
     filenavigator.getFiles(startindex);
   }
@@ -1264,7 +1283,7 @@ namespace Anycubic {
            *p_u8 = data_buf[3];
            if((control_value&0x00FFFFFF) == 0x010072) { // startup last gif
 
-             LcdAudioSet(lcd_info.audio);
+             LcdAudioSet(lcd_info.audio_on);
 
              SendValueToTFT(2, ADDRESS_MOVE_DISTANCE);
 
@@ -1277,16 +1296,19 @@ namespace Anycubic {
 
                 char filename[64] = { '\0' };
                 ChangePageOfTFT(PAGE_OUTAGE_RECOVERY);
-                card.getLongPath(filename, recovery.info.sd_filename);
-                SendTxtToTFT(filename, TXT_OUTAGE_RECOVERY_FILE);
-                SendTxtToTFT(ui8tostr3rj(recovery.info.print_progress), TXT_OUTAGE_RECOVERY_PROGRESS);
-                PlayTune(BEEPER_PIN, SOS, 1);
+                #if ENABLED(LONG_FILENAME_HOST_SUPPORT)
+                  card.getLongPath(filename, recovery.info.sd_filename);
+                  SendTxtToTFT(filename, TXT_OUTAGE_RECOVERY_FILE);
+                #else
+                  SendTxtToTFT(ui8tostr3rj(recovery.info.print_job_elapsed), TXT_OUTAGE_RECOVERY_PROGRESS);
+                #endif
+                playTune(SOS, 1);
              } else {
                 ChangePageOfTFT(PAGE_MAIN);
              }
 
            } else if((control_value&0x00FFFFFF) == 0x010000) {  // startup first gif
-             PlayTune(BEEPER_PIN, Anycubic_PowerOn, 1);         // take 3500 ms
+             playTune(Anycubic_PowerOn, 1);         // take 3500 ms
            }
   	    }
 
@@ -1377,16 +1399,16 @@ namespace Anycubic {
 
 	  case 4:   // system
       {
-        if(lcd_info.language == ExtUI::ENG) {
-          if(lcd_info.audio == ExtUI::ON) {
+        if(lcd_info.language == ENG) {
+          if(lcd_info.audio_on) {
             ChangePageOfTFT(11);    // PAGE_SYSTEM_ENG_AUDIO_ON - 120
-          } else if(lcd_info.audio == ExtUI::OFF) {
+          } else if(!lcd_info.audio_on) {
             ChangePageOfTFT(50);   // PAGE_SYSTEM_ENG_AUDIO_OFF - 120
           }
-        } else if(lcd_info.language == ExtUI::CHS) {
-          if(lcd_info.audio == ExtUI::ON) {
+        } else if(lcd_info.language == CHS) {
+          if(lcd_info.audio_on) {
             ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
-          } else if(lcd_info.audio == ExtUI::OFF) {
+          } else if(!lcd_info.audio_on) {
             ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
           }
         }
@@ -1471,7 +1493,7 @@ namespace Anycubic {
 
 	  case 5: // resume of outage(last power off)
 #if ACDEBUG(AC_MARLIN)
-	    SERIAL_ECHOLNPAIR("printer_state: ", printer_state);
+	    SERIAL_ECHOLNPGM("printer_state: ", printer_state);
 #endif
         if(lcd_txtbox_index > 0 && lcd_txtbox_index  < 6) {   // 1~5
 
@@ -1491,7 +1513,7 @@ namespace Anycubic {
             if (printer_state == AC_printer_resuming_from_power_outage) {
               // Need to home here to restore the Z position
 //              injectCommands_P(AC_cmnd_power_loss_recovery);
-//              SERIAL_ECHOLNPAIR("start resumeing from power outage: ", AC_cmnd_power_loss_recovery);
+//              SERIAL_ECHOLNPGM("start resumeing from power outage: ", AC_cmnd_power_loss_recovery);
               ChangePageOfTFT(PAGE_STATUS2);    // show pause
               injectCommands_P(PSTR("M1000"));  // home and start recovery
             }
@@ -1505,9 +1527,9 @@ namespace Anycubic {
             if(filenavigator.filelist.seek(lcd_txtbox_page*5+(lcd_txtbox_index-1))) {
 
 #if 0
-              SERIAL_ECHOLNPAIR("start print: ", lcd_txtbox_page*5+(lcd_txtbox_index-1));
-              SERIAL_ECHOLNPAIR("start print: ", filenavigator.filelist.shortFilename());
-              SERIAL_ECHOLNPAIR("start print: ", filenavigator.filelist.longFilename());
+              SERIAL_ECHOLNPGM("start print: ", lcd_txtbox_page*5+(lcd_txtbox_index-1));
+              SERIAL_ECHOLNPGM("start print: ", filenavigator.filelist.shortFilename());
+              SERIAL_ECHOLNPGM("start print: ", filenavigator.filelist.longFilename());
 #endif
 
               SendColorToTFT(COLOR_BLUE, TXT_DISCRIBE_0+0x30*(lcd_txtbox_index-1));
@@ -1610,12 +1632,12 @@ namespace Anycubic {
 
           case 2: // resume print
 #if ACDEBUG(AC_MARLIN)
-            SERIAL_ECHOLNPAIR("printer_state: ", printer_state);
-            SERIAL_ECHOLNPAIR("pause_state: ", pause_state);
+            SERIAL_ECHOLNPGM("printer_state: ", printer_state);
+            SERIAL_ECHOLNPGM("pause_state: ", pause_state);
 #endif
             if(pause_state == AC_paused_idle || pause_state == AC_paused_filament_lack ||
                printer_state == AC_printer_resuming_from_power_outage) {
-              if(READ(FIL_RUNOUT_PIN) == getFilamentRunoutOriginState()) {
+              if(READ(FIL_RUNOUT_PIN) == FIL_RUNOUT_STATE) {
                 printer_state = AC_printer_idle;
                 pause_state = AC_paused_idle;
                 resumePrint();
@@ -1729,7 +1751,7 @@ namespace Anycubic {
           feedrate_last = (uint16_t)getFeedrate_percent();
           SendValueToTFT(feedrate_last, TXT_ADJUST_SPEED);   
           SendValueToTFT((uint16_t)getActualFan_percent(FAN0), TXT_FAN_SPEED_TARGET);
-          SendTxtToTFT(ftostr(getZOffset_mm()), TXT_LEVEL_OFFSET);
+          SendTxtToTFT(ftostr52sprj(getZOffset_mm()), TXT_LEVEL_OFFSET);
 
           break;
         }
@@ -1780,7 +1802,7 @@ namespace Anycubic {
       case 2: // -
       {
         float z_off = getZOffset_mm();
-//        SERIAL_ECHOLNPAIR("z_off: ", z_off);
+//        SERIAL_ECHOLNPGM("z_off: ", z_off);
 //        setSoftEndstopState(false);
         if(z_off <= -5) {
             return ;
@@ -1789,14 +1811,14 @@ namespace Anycubic {
         setZOffset_mm(z_off);
 
         str_buf[0]=0;
-        strcat(str_buf, ftostr(getZOffset_mm()));
+        strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
         SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
   
 //        if (isAxisPositionKnown(Z)) {  // Move Z axis
-//          SERIAL_ECHOLNPAIR("Z now:", getAxisPosition_mm(Z));
+//          SERIAL_ECHOLNPGM("Z now:", getAxisPosition_mm(Z));
 //          const float currZpos = getAxisPosition_mm(Z);
 //          setAxisPosition_mm(currZpos-0.05, Z);
-//          SERIAL_ECHOLNPAIR("Z now:", getAxisPosition_mm(Z));
+//          SERIAL_ECHOLNPGM("Z now:", getAxisPosition_mm(Z));
 //        }
 
         int16_t steps = mmToWholeSteps(-0.05, Z);
@@ -1811,7 +1833,7 @@ namespace Anycubic {
       case 3: // +
       {
         float z_off = getZOffset_mm();
-//        SERIAL_ECHOLNPAIR("z_off: ", z_off);
+//        SERIAL_ECHOLNPGM("z_off: ", z_off);
 //        setSoftEndstopState(false);
 
         if(z_off >= 5) {
@@ -1821,17 +1843,17 @@ namespace Anycubic {
         setZOffset_mm(z_off);
   
         str_buf[0]=0;
-        strcat(str_buf, ftostr(getZOffset_mm()));
+        strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
         SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
   
   //          int16_t steps = mmToWholeSteps(constrain(Zshift,-0.05,0.05), Z);
 
 /*
         if (isAxisPositionKnown(Z)) {  // Move Z axis
-          SERIAL_ECHOLNPAIR("Z now:", getAxisPosition_mm(Z));
+          SERIAL_ECHOLNPGM("Z now:", getAxisPosition_mm(Z));
           const float currZpos = getAxisPosition_mm(Z);
           setAxisPosition_mm(currZpos-0.05, Z);
-          SERIAL_ECHOLNPAIR("Z now:", getAxisPosition_mm(Z));
+          SERIAL_ECHOLNPGM("Z now:", getAxisPosition_mm(Z));
         }
 */
 
@@ -1938,7 +1960,7 @@ namespace Anycubic {
 
           case 5:   // turn off the xyz motor
             if(!isMoving()) {
-                disable_all_steppers();
+                stepper.disable_all_steppers();
                 set_all_unhomed();
             }
           break;
@@ -2234,16 +2256,16 @@ namespace Anycubic {
           {
             if(lcd_info.language == CHS) {
                 lcd_info.language = ENG;
-                if(lcd_info.audio == ExtUI::ON) {
+                if(lcd_info.audio_on) {
                     ChangePageOfTFT(11);  // PAGE_SYSTEM_ENG_AUDIO_ON-120
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                     ChangePageOfTFT(50);  // PAGE_SYSTEM_ENG_AUDIO_OFF-120
                 }
-            } else if(lcd_info.language == ExtUI::ENG) {
-                lcd_info.language = ExtUI::CHS;
-                if(lcd_info.audio == ExtUI::ON) {
+            } else if(lcd_info.language == ENG) {
+                lcd_info.language = CHS;
+                if(lcd_info.audio_on) {
                     ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                     ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
                 }
             }
@@ -2255,23 +2277,23 @@ namespace Anycubic {
 
           case 4:   // audio
           {
-            if(lcd_info.audio == ExtUI::ON) {
-                lcd_info.audio = ExtUI::OFF;
-                if(lcd_info.language == ExtUI::CHS) {
+            if(lcd_info.audio_on) {
+                lcd_info.audio_on = !lcd_info.audio_on;
+                if(lcd_info.language == CHS) {
                   ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
-                } else if(lcd_info.language == ExtUI::ENG) {
+                } else if(lcd_info.language == ENG) {
                   ChangePageOfTFT(50);    // PAGE_SYSTEM_ENG_AUDIO_OFF - 120
                 }
-            } else if(lcd_info.audio == ExtUI::OFF) {
-                lcd_info.audio = ExtUI::ON;
-                if(lcd_info.language == ExtUI::CHS) {
+            } else if(!lcd_info.audio_on) {
+                lcd_info.audio_on = !lcd_info.audio_on;
+                if(lcd_info.language == CHS) {
                   ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
-                } else if(lcd_info.language == ExtUI::ENG) {
+                } else if(lcd_info.language == ENG) {
                   ChangePageOfTFT(11);    // PAGE_SYSTEM_ENG_AUDIO_ON - 120
                 }
             }
 
-            LcdAudioSet(lcd_info.audio);
+            LcdAudioSet(lcd_info.audio_on);
           }
           break;
 
@@ -2319,16 +2341,16 @@ namespace Anycubic {
 
           case 1://return
           {
-              if(lcd_info.language == ExtUI::ENG) {
-                if(lcd_info.audio == ExtUI::ON) {
+              if(lcd_info.language == ENG) {
+                if(lcd_info.audio_on) {
                   ChangePageOfTFT(11);    // PAGE_SYSTEM_ENG_AUDIO_ON - 120
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                   ChangePageOfTFT(50);   // PAGE_SYSTEM_ENG_AUDIO_OFF - 120
                 }
-              } else if(lcd_info.language == ExtUI::CHS) {
-                if(lcd_info.audio == ExtUI::ON) {
+              } else if(lcd_info.language == CHS) {
+                if(lcd_info.audio_on) {
                   ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                   ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
                 }
               }
@@ -2441,7 +2463,7 @@ namespace Anycubic {
                   case 3:
                   char str_buf[10];
                   str_buf[0]=0;
-                  strcat(str_buf, ftostr(getZOffset_mm()));
+                  strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
                   SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
                   ChangePageOfTFT(PAGE_LEVEL_ADVANCE);
                   break;
@@ -2453,75 +2475,75 @@ namespace Anycubic {
                 }
         }
 
-        void DgusTFT::page17_handle(void)
-        {
-            char str_buf[10];
-            float z_off;
-
-            switch (key_value)
-            {
-              case 0:
-
-              break;
-
-              case 1://return
-              {
-                ChangePageOfTFT(PAGE_PreLEVEL);
-              }
-              break;
-
-              case 2:
-              {
-                setSoftEndstopState(false);
-                if(getZOffset_mm() <= -5) {
-                    return ;
-                }
-                
-                z_off = getZOffset_mm() - 0.0500f;
-                setZOffset_mm(z_off);
-
-                strcpy_P(str_buf, ftostr(z_off));
-                SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
-
-                if (isAxisPositionKnown(Z)) {
-                  const float currZpos = getAxisPosition_mm(Z);
-                  setAxisPosition_mm(currZpos-0.05, Z);
-                }
-
-                setSoftEndstopState(true);
-              }
-              break;
-
-              case 3:
-              {
-                setSoftEndstopState(false);
-                if(getZOffset_mm() >= 5) {
-                    return ;
-                }
-                z_off = getZOffset_mm() + 0.0500f;
-                setZOffset_mm(z_off);
-
-                strcpy_P(str_buf, ftostr(z_off));
-                SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
-
-                if (isAxisPositionKnown(Z)) {  // Move Z axis
-                  const float currZpos = getAxisPosition_mm(Z);
-                  setAxisPosition_mm(currZpos+0.05, Z);
-                }
-
-                setSoftEndstopState(true);
-              }     
-              break;
-
-              case 4:
-
-#if ACDEBUG(AC_MARLIN)
-                SERIAL_ECHOLNPAIR("z off: ", ftostr(getZOffset_mm()));
-#endif
-                injectCommands_P(PSTR("M500"));
-                ChangePageOfTFT(PAGE_PREPARE);
-              break;
+        void DgusTFT::page17_handle() {
+          #if ACDEBUG(AC_ALL)
+            if ((page_index_saved != page_index_now) || (key_value_saved != key_value)) {
+              DEBUG_ECHOLNPGM("page17  page_index_last_2: ", page_index_last_2,  "  page_index_last: ", page_index_last, "  page_index_now: ", page_index_now, "  key: ", key_value);
+              page_index_saved = page_index_now;
+              key_value_saved = key_value;
             }
+          #endif
+          float z_off;
+          switch (key_value) {
+            case 0: break;
+
+            case 1:        // return
+              ChangePageOfTFT(PAGE_PreLEVEL);
+              break;
+
+            case 2: {
+              setSoftEndstopState(false);
+              if (getZOffset_mm() <= -5) return;
+              z_off = getZOffset_mm() - 0.01f;
+              setZOffset_mm(z_off);
+
+              char str_buf[10];
+              strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
+              SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+              //sendTxtToTFT(ftostr52sprj(getZOffset_mm()), TXT_LEVEL_OFFSET);
+
+              if (isAxisPositionKnown(Z)) {
+                const float currZpos = getAxisPosition_mm(Z);
+                setAxisPosition_mm(currZpos - 0.01f, Z);
+              }
+
+              setSoftEndstopState(true);
+            } break;
+
+            case 3: {
+              setSoftEndstopState(false);
+              if (getZOffset_mm() >= 5) return;
+              z_off = getZOffset_mm() + 0.01f;
+              setZOffset_mm(z_off);
+
+              char str_buf[10];
+              strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
+              SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
+              //sendTxtToTFT(ftostr52sprj(getZOffset_mm()), TXT_LEVEL_OFFSET);
+
+              if (isAxisPositionKnown(Z)) {          // Move Z axis
+                const float currZpos = getAxisPosition_mm(Z);
+                setAxisPosition_mm(currZpos + 0.01f, Z);
+              }
+
+              setSoftEndstopState(true);
+            } break;
+
+            case 4:
+              #if ACDEBUG(AC_MARLIN)
+                DEBUG_ECHOLNPGM("z off: ", ftostr52sprj(getZOffset_mm()));
+              #endif
+              #if HAS_LEVELING
+                GRID_LOOP(x, y) {
+                  const xy_uint8_t pos { x, y };
+                  const float currval = getMeshPoint(pos);
+                  setMeshPoint(pos, constrain(currval + getZOffset_mm(), AC_LOWEST_MESHPOINT_VAL, 5));
+                }
+                injectCommands(F("M500"));
+              #endif
+              ChangePageOfTFT(PAGE_PREPARE);
+              break;
+          }
         }
 
         void DgusTFT::page18_handle(void) //preheat
@@ -2700,7 +2722,7 @@ namespace Anycubic {
 #endif
                 ChangePageOfTFT(PAGE_MAIN);
                 setFeedrate_percent(100);           // resume print speed to 100
-                clearProgress_seconds_elapsed();    // clear print time elapsed
+                print_job_timer.reset();            // clear print time elapsed
               }
               break;
 
@@ -2774,8 +2796,8 @@ namespace Anycubic {
                   case 1: // return
                   {
 #if ACDEBUG(AC_MARLIN)
-                    SERIAL_ECHOLNPAIR("printer_state: ", printer_state);
-                    SERIAL_ECHOLNPAIR("pause_state: ", pause_state);
+                    SERIAL_ECHOLNPGM("printer_state: ", printer_state);
+                    SERIAL_ECHOLNPGM("pause_state: ", pause_state);
 #endif
                     if(AC_printer_printing == printer_state) {
                       ChangePageOfTFT(PAGE_STATUS2);  // show pause
@@ -2842,7 +2864,7 @@ namespace Anycubic {
                 }
 
                 setFeedrate_percent(100);           // resume print speed to 100
-                clearProgress_seconds_elapsed();    // clear print time elapsed
+                print_job_timer.reset();    // clear print time elapsed
               }
               break;
 
@@ -3086,10 +3108,10 @@ namespace Anycubic {
           {
             ChangePageOfTFT(PAGE_MAIN);
             if(lcd_info_back.language != lcd_info.language ||
-               lcd_info_back.audio    != lcd_info.audio) {
+               lcd_info_back.audio_on    != lcd_info.audio_on) {
 
                lcd_info_back.language = lcd_info.language;
-               lcd_info_back.audio    = lcd_info.audio;
+               lcd_info_back.audio_on   = lcd_info.audio_on;
 
                injectCommands_P(PSTR("M500"));
             }
@@ -3098,18 +3120,18 @@ namespace Anycubic {
 
           case 2:   // language
           {
-            if(lcd_info.language == ExtUI::CHS) {
-                lcd_info.language = ExtUI::ENG;
-                if(lcd_info.audio == ExtUI::ON) {
+            if(lcd_info.language == CHS) {
+                lcd_info.language = ENG;
+                if(lcd_info.audio_on) {
                     ChangePageOfTFT(11);  // PAGE_SYSTEM_ENG_AUDIO_ON-120
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                     ChangePageOfTFT(50);  // PAGE_SYSTEM_ENG_AUDIO_OFF-120
                 }
-            } else if(lcd_info.language == ExtUI::ENG) {
-                lcd_info.language = ExtUI::CHS;
-                if(lcd_info.audio == ExtUI::ON) {
+            } else if(lcd_info.language == ENG) {
+                lcd_info.language = CHS;
+                if(lcd_info.audio_on) {
                     ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                     ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
                 }
             }
@@ -3121,15 +3143,15 @@ namespace Anycubic {
 
           case 4:   // audio
           {
-            if(lcd_info.audio == ExtUI::ON) {
-                lcd_info.audio = ExtUI::OFF;
+            if(lcd_info.audio_on) {
+                lcd_info.audio_on = !lcd_info.audio_on;
                 ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
-            } else if(lcd_info.audio == ExtUI::OFF) {
-                lcd_info.audio = ExtUI::ON;
+            } else if(!lcd_info.audio_on) {
+                lcd_info.audio_on = !lcd_info.audio_on;
                 ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
             }
 
-            LcdAudioSet(lcd_info.audio);
+            LcdAudioSet(lcd_info.audio_on);
           }
           break;
 
@@ -3160,10 +3182,10 @@ namespace Anycubic {
           {
             ChangePageOfTFT(PAGE_MAIN);
             if(lcd_info_back.language != lcd_info.language ||
-               lcd_info_back.audio    != lcd_info.audio) {
+               lcd_info_back.audio_on    != lcd_info.audio_on) {
 
                lcd_info_back.language = lcd_info.language;
-               lcd_info_back.audio    = lcd_info.audio;
+               lcd_info_back.audio_on    = lcd_info.audio_on;
 
                injectCommands_P(PSTR("M500"));
             }
@@ -3172,18 +3194,18 @@ namespace Anycubic {
 
           case 2:   // language
           {
-            if(lcd_info.language == ExtUI::CHS) {
-                lcd_info.language = ExtUI::ENG;
-                if(lcd_info.audio == ExtUI::ON) {
+            if(lcd_info.language == CHS) {
+                lcd_info.language = ENG;
+                if(lcd_info.audio_on) {
                     ChangePageOfTFT(11);  // PAGE_SYSTEM_ENG_AUDIO_ON-120
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                     ChangePageOfTFT(50);  // PAGE_SYSTEM_ENG_AUDIO_OFF-120
                 }
-            } else if(lcd_info.language == ExtUI::ENG) {
-                lcd_info.language = ExtUI::CHS;
-                if(lcd_info.audio == ExtUI::ON) {
+            } else if(lcd_info.language == ENG) {
+                lcd_info.language = CHS;
+                if(lcd_info.audio_on) {
                     ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
-                } else if(lcd_info.audio == ExtUI::OFF) {
+                } else if(!lcd_info.audio_on) {
                     ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
                 }
             }
@@ -3195,15 +3217,15 @@ namespace Anycubic {
 
           case 4:   // audio
           {
-            if(lcd_info.audio == ExtUI::ON) {
-                lcd_info.audio = ExtUI::OFF;
+            if(lcd_info.audio_on) {
+                lcd_info.audio_on = !lcd_info.audio_on;
                 ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_OFF);
-            } else if(lcd_info.audio == ExtUI::OFF) {
-                lcd_info.audio = ExtUI::ON;
+            } else if(!lcd_info.audio_on) {
+                lcd_info.audio_on = !lcd_info.audio_on;
                 ChangePageOfTFT(PAGE_SYSTEM_CHS_AUDIO_ON);
             }
 
-            LcdAudioSet(lcd_info.audio);
+            LcdAudioSet(lcd_info.audio_on);
           }
           break;
 
@@ -3237,9 +3259,13 @@ namespace Anycubic {
           {
             char filename[64] = { '\0' };
             ChangePageOfTFT(PAGE_OUTAGE_RECOVERY);
-            card.getLongPath(filename, recovery.info.sd_filename);
-            filename[17] = '\0';
-            SendTxtToTFT(filename, TXT_OUTAGE_RECOVERY_FILE);
+            #if ENABLED(LONG_FILENAME_HOST_SUPPORT)
+              card.getLongPath(filename, recovery.info.sd_filename);
+              filename[17] = '\0';
+              SendTxtToTFT(filename, TXT_OUTAGE_RECOVERY_FILE);
+            #else
+              SendTxtToTFT(recovery.info.sd_filename, TXT_OUTAGE_RECOVERY_FILE);
+            #endif
 
             sprintf(str_buf, "%u", (uint16_t)getFeedrate_percent());
             SendTxtToTFT(str_buf, TXT_PRINT_SPEED);
@@ -3282,11 +3308,17 @@ namespace Anycubic {
 
           case 1:   // resume
           {
-            char filename[64] = { '\0' };
+            #if ENABLED(LONG_FILENAME_HOST_SUPPORT)
+              char filename[64] = { '\0' };
+            #endif
             ChangePageOfTFT(PAGE_OUTAGE_RECOVERY);
-            card.getLongPath(filename, recovery.info.sd_filename);
-            filename[17] = '\0';
-            SendTxtToTFT(filename, TXT_OUTAGE_RECOVERY_FILE);
+            #if ENABLED(LONG_FILENAME_HOST_SUPPORT)
+              card.getLongPath(filename, recovery.info.sd_filename);
+              filename[17] = '\0';
+              SendTxtToTFT(filename, TXT_OUTAGE_RECOVERY_FILE);
+            #else
+              SendTxtToTFT(recovery.info.sd_filename, TXT_OUTAGE_RECOVERY_FILE);
+            #endif
   
             sprintf(str_buf, "%u", (uint16_t)getFeedrate_percent());
             SendTxtToTFT(str_buf, TXT_PRINT_SPEED);
@@ -3348,9 +3380,9 @@ namespace Anycubic {
           case 1:   // return
 
 #if ACDEBUG(AC_MARLIN)
-            SERIAL_ECHOLNPAIR("page_index_now: ", page_index_now);
-            SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
-            SERIAL_ECHOLNPAIR("page_index_last_2: ", page_index_last_2);
+            SERIAL_ECHOLNPGM("page_index_now: ", page_index_now);
+            SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
+            SERIAL_ECHOLNPGM("page_index_last_2: ", page_index_last_2);
 #endif
 
             if((PAGE_CHS_ABNORMAL_X_ENDSTOP <= page_index_now && 
@@ -3358,7 +3390,7 @@ namespace Anycubic {
                (PAGE_ENG_ABNORMAL_X_ENDSTOP <= page_index_now &&
                page_index_now <= PAGE_ENG_ABNORMAL_Z_ENDSTOP)) {
   
-              if(lcd_info.language == ExtUI::ENG) {
+              if(lcd_info.language == ENG) {
                 if(page_index_last_2 > 120) {
                     page_index_last_2 -= 120;
                 }
@@ -3377,7 +3409,7 @@ namespace Anycubic {
 
             } else {
 
-              if(lcd_info.language == ExtUI::ENG) {
+              if(lcd_info.language == ENG) {
                 if(page_index_last > 120) {
                     page_index_last -= 120;
                 }
@@ -3385,7 +3417,7 @@ namespace Anycubic {
               ChangePageOfTFT(page_index_last);
             }
 
-            disable_all_steppers();
+            stepper.disable_all_steppers();
 
           break;
 
@@ -3401,9 +3433,9 @@ namespace Anycubic {
         {
           case 1:   // return
 
-            SERIAL_ECHOLNPAIR("page_index_now: ", page_index_now);
-            SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
-            SERIAL_ECHOLNPAIR("page_index_last_2: ", page_index_last_2);
+            SERIAL_ECHOLNPGM("page_index_now: ", page_index_now);
+            SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
+            SERIAL_ECHOLNPGM("page_index_last_2: ", page_index_last_2);
 
             if(isPrinting() || isPrintingPaused() || isPrintingFromMedia()) {
               printer_state = AC_printer_stopping;
@@ -3430,9 +3462,9 @@ namespace Anycubic {
           case 1:   // return
 
 #if ACDEBUG(AC_MARLIN)
-            SERIAL_ECHOLNPAIR("page_index_now: ", page_index_now);
-            SERIAL_ECHOLNPAIR("page_index_last: ", page_index_last);
-            SERIAL_ECHOLNPAIR("page_index_last_2: ", page_index_last_2);
+            SERIAL_ECHOLNPGM("page_index_now: ", page_index_now);
+            SERIAL_ECHOLNPGM("page_index_last: ", page_index_last);
+            SERIAL_ECHOLNPGM("page_index_last_2: ", page_index_last_2);
 #endif
             ChangePageOfTFT(PAGE_PreLEVEL);
 
@@ -3442,6 +3474,17 @@ namespace Anycubic {
             break;
         }
     }
+
+    inline void ProbeTare() {
+      #if PIN_EXISTS(AUTO_LEVEL_TX)
+        OUT_WRITE(AUTO_LEVEL_TX_PIN, LOW);
+        delay(300);
+        OUT_WRITE(AUTO_LEVEL_TX_PIN, HIGH);
+        delay(100);
+      #endif
+    }
+
+    inline bool getProbeState() { return PROBE_TRIGGERED(); }
     
     void DgusTFT::page201_handle(void)  // probe precheck
     {
@@ -3568,7 +3611,7 @@ namespace Anycubic {
   
         case 5:   // turn off the xyz motor
           if(!isMoving()) {
-              disable_all_steppers();
+              stepper.disable_all_steppers();
           }
         break;
   
@@ -3616,7 +3659,7 @@ namespace Anycubic {
         setZOffset_mm(z_off);
 
         str_buf[0]=0;
-        strcat(str_buf, ftostr(getZOffset_mm()));
+        strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
         SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
 
         int16_t steps = mmToWholeSteps(-0.05, Z);
@@ -3637,7 +3680,7 @@ namespace Anycubic {
         setZOffset_mm(z_off);
   
         str_buf[0]=0;
-        strcat(str_buf, ftostr(getZOffset_mm()));
+        strcat(str_buf, ftostr52sprj(getZOffset_mm()) + 2);
         SendTxtToTFT(str_buf, TXT_LEVEL_OFFSET);
 
         int16_t steps = mmToWholeSteps(0.05, Z);

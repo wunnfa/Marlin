@@ -412,7 +412,7 @@ namespace Anycubic {
       void Startup();
       void ParamInit();
       void IdleLoop();
-      void PrinterKilled(PGM_P,PGM_P);
+      void PrinterKilled(FSTR_P,FSTR_P);
       void MediaEvent(media_event_t);
       void TimerEvent(timer_event_t);
       void FilamentRunout();

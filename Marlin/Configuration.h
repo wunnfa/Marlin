@@ -2538,7 +2538,7 @@
  *
  * View the current statistics with M78.
  */
-//#define PRINTCOUNTER
+#define PRINTCOUNTER
 #if ENABLED(PRINTCOUNTER)
   #define PRINTCOUNTER_SAVE_INTERVAL 60 // (minutes) EEPROM save interval during print. A value of 0 will save stats at end of print.
 #endif
@@ -3162,6 +3162,7 @@
  *
  * :[ 'ORIGIN', 'FYSETC', 'HYPRECY', 'MKS', 'RELOADED', 'IA_CREALITY', 'E3S1PRO' ]
  */
+#define LCD_SERIAL_PORT 3
 //#define DGUS_LCD_UI ORIGIN
 #if DGUS_UI_IS(MKS)
   #define USE_MKS_GREEN_UI
@@ -3197,16 +3198,12 @@
 //
 // Touch-screen LCD for Anycubic Vyper
 //
-#define ANYCUBIC_LCD_VYPER
+//#define ANYCUBIC_LCD_VYPER
 
 //
 // Touch-screen LCD for Anycubic Kobra
 //
-//#define ANYCUBIC_LCD_DGUS
-
-#if ANY(ANYCUBIC_LCD_DGUS, ANYCUBIC_LCD_VYPER)
-  #define LCD_SERIAL_PORT 3
-#endif
+#define ANYCUBIC_LCD_KOBRA
 
 //
 // 320x240 Nextion 2.8" serial TFT Resistive Touch Screen NX3224T028

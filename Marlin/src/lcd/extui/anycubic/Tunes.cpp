@@ -31,7 +31,7 @@
 
 #include "../../../inc/MarlinConfigPre.h"
 
-#if ANY(ANYCUBIC_LCD_CHIRON, ANYCUBIC_LCD_VYPER)
+#if ANY(ANYCUBIC_LCD_CHIRON, ANYCUBIC_LCD_VYPER, ANYCUBIC_LCD_KOBRA)
 
 #include "Tunes.h"
 #include "../../../libs/buzzer.h"

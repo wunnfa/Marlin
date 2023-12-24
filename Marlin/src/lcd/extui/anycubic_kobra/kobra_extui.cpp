@@ -43,8 +43,8 @@ namespace ExtUI {
 
   void onIdle() { Dgus.IdleLoop(); }
 
-  void onPrinterKilled(PGM_P const error, PGM_P const component) {
-    Dgus.PrinterKilled(error,component);
+  void onPrinterKilled(FSTR_P const error, FSTR_P const component) {
+    Dgus.PrinterKilled(error, component);
   }
 
   void onMediaInserted() { Dgus.MediaEvent(AC_media_inserted); }
@@ -63,9 +63,10 @@ namespace ExtUI {
   void onFilamentRunout(const extruder_t)            { Dgus.FilamentRunout();             }
   void onUserConfirmRequired(const char * const msg) { Dgus.ConfirmationRequest(msg);     }
   void onStatusChanged(const char * const msg)       { Dgus.StatusChange(msg);            }
+  void onPrintDone() {}
 
   void onHomingStart()    { Dgus.HomingStart(); }
-  void onHomingComplete() { Dgus.HomingComplete(); }
+  void onHomingDone()     { Dgus.HomingComplete(); }
   void onPrintFinished() {}
 
   void onFactoryReset() {
@@ -95,15 +96,26 @@ namespace ExtUI {
     memcpy(&Dgus.lcd_info_back, buff, sizeof(Dgus.lcd_info_back));
   }
 
-  void onConfigurationStoreWritten(bool success) {
+  void onPostprocessSettings() {
+    // Called after loading or resetting stored settings
+    Dgus.ParamInit();
+    //dgus.powerLoss();
+  }
+
+  void onSettingsStored(const bool success) {
     // Called after the entire EEPROM has been written,
     // whether successful or not.
   }
 
-  void onConfigurationStoreRead(bool success) {
+  void onSettingsLoaded(const bool success) {
     // Called after the entire EEPROM has been read,
     // whether successful or not.
   }
+
+  #if HAS_LEVELING
+    void onLevelingStart() {}
+    void onLevelingDone() {}
+  #endif
 
   #if HAS_MESH
     void onMeshLevelingStart() {}
@@ -120,6 +132,8 @@ namespace ExtUI {
   #endif
 
   #if ENABLED(POWER_LOSS_RECOVERY)
+    // Called when power-loss is enabled/disabled
+    void onSetPowerLoss(const bool) { Dgus.PowerLoss(); }
     // Called on resume from power-loss
     void onPowerLoss() { Dgus.PowerLoss(); }
     void onPowerLossResume() { Dgus.PowerLossRecovery(); }
